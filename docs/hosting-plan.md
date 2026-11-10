@@ -51,16 +51,21 @@ Build steps 1 to 7 on localhost and deploy in step 8. A deployed app with no log
 
 ## Step 0: Supabase CLI and migrations in git
 
+**Done on 10 November 2026** (pull requests #2 and #3). The first migration is `supabase/migrations/20261110223319_remote_schema.sql`, and [database-schema.md](database-schema.md) describes what's in it. The steps are kept here as a record and for setting up on another computer.
+
 Use the Supabase CLI so every schema change is a file in git, and the database records which files have already run. It's the same idea as `prisma migrate deploy` in the 460 backend.
 
-1. Work on a branch per step, for example `jk/migrations`.
-2. Install the CLI as a dev dependency, so its version is pinned in `package.json`:
+**`--remote` on every database command.** This version of the CLI aims database commands at a local copy of Supabase by default (`127.0.0.1:54322`). This project uses only the hosted database, so add `--remote` to `db pull`, `db push`, `db dump`, `migration list` and `migration repair`. Without it you get `connect ECONNREFUSED 127.0.0.1:54322`. Don't run `supabase start`; that builds the local copy, which this guide doesn't use. `migration new` only creates a file, so it needs no flag.
+
+1. Start **Docker Desktop** and wait until its engine is running. You don't create any containers yourself; `db pull` starts a temporary one and removes it afterwards.
+2. Work on a branch, for example `jk/migrations`.
+3. Install the CLI as a dev dependency, so its version is pinned in `package.json`:
 
    ```powershell
    npm install supabase --save-dev
    ```
 
-3. Set up the folder and connect it to your project:
+4. Set up the folder and connect it to your project:
 
    ```powershell
    npx supabase init
@@ -68,33 +73,57 @@ Use the Supabase CLI so every schema change is a file in git, and the database r
    npx supabase link --project-ref <your project ref>
    ```
 
-   - `init` creates `supabase/` at the repo root, next to `src/` and `scripts/`, with `config.toml` and `migrations/`. Commit both.
+   - `init` creates `supabase/` at the repo root, next to `src/` and `scripts/`, with `config.toml` and `.gitignore`. Answer **N** if it asks about Deno settings.
+   - `login` opens the browser and saves an access token in your Windows user profile, not in the repo. That token can reach every project on your Supabase account; run `npx supabase logout` on any computer that isn't yours.
    - The project ref is the id in your Supabase dashboard address (`supabase.com/dashboard/project/<ref>`).
-   - `link` asks for the database password from **Project Settings → Database**. Type it at the prompt. Don't save it in any file.
+   - `link` doesn't ask for the database password; the login token covers it. It writes its details to `supabase/.temp/`, which is gitignored and holds no password.
 
-4. Capture the tables you already made by hand:
-
-   ```powershell
-   npx supabase db pull
-   ```
-
-   This writes the current schema to a timestamped file in `supabase/migrations/`. When it asks whether to update the remote migration history, answer **yes**. That marks the file as already applied, so a later `db push` won't try to create tables that already exist.
-
-   `db pull` probably needs Docker Desktop running. Without Docker:
-   1. Write the SQL for the two tables yourself in a file named like `20261110000000_initial.sql`.
-   2. Mark it as applied with `npx supabase migration repair --status applied 20261110000000`.
-
-5. From now on, every schema change in this guide works the same way:
+5. Capture the tables you already made by hand:
 
    ```powershell
-   npx supabase migration new <short_name>
-   # write the SQL in the new file under supabase/migrations/
-   npx supabase db push
+   npx supabase db pull --remote
    ```
 
-   Commit the migration together with the code that needs it. Don't change tables in the dashboard any more. A change made there isn't in any file, and the next `db pull` or rebuild will miss it or conflict with it.
+   The first run downloads Docker images, which takes a few minutes. It writes the current schema to a timestamped file in `supabase/migrations/`. When it asks **"Update remote migration history table?"**, answer **Y**.
 
-**Check:** `npx supabase migration list` shows the initial migration as applied on the remote, and `supabase/migrations/` is committed.
+   **Why that answer matters.** The CLI keeps a list of applied migrations in the database (`supabase_migrations.schema_migrations`). `db push` runs every file that isn't on the list. The tables were made in the dashboard, so the list started empty. Without the **Y**, the next `db push` would run this file's `create table` and fail with `relation "applications" already exists`. Answering **Y** puts the file on the list without running it. Neither choice changes your tables or rows.
+
+6. Confirm the CLI knows the tables already exist:
+
+   ```powershell
+   npx supabase migration list --remote
+   npx supabase db push --remote --dry-run
+   ```
+
+   The first shows the migration's timestamp under both **Local** and **Remote**. The second says the remote database is up to date.
+
+   If the timestamp is under **Local** only, the history wasn't updated. Add it by hand, then check again:
+
+   ```powershell
+   npx supabase migration repair --status applied <timestamp> --remote
+   ```
+
+7. Read the migration file and check it has both tables, the unique constraints on `url` and `email_id`, and Row Level Security on. Don't edit it; it's a record of the database at that moment.
+8. Commit `package.json`, `package-lock.json` and `supabase/`. Nothing from `supabase/.temp/` should appear in `git status`.
+
+**From now on, every schema change works the same way:**
+
+```powershell
+npx supabase migration new <short_name>
+# write the SQL in the new file under supabase/migrations/
+npx supabase db push --remote --dry-run
+npx supabase db push --remote
+```
+
+Commit the migration together with the code that needs it. Don't change tables in the dashboard any more. A change made there isn't in any file, so the repo and the database drift apart.
+
+**Back up before a migration that changes existing tables.** The free plan has no automatic backups. This saves your rows outside the repo, because the file contains your personal data:
+
+```powershell
+npx supabase db dump --remote --data-only -f "$HOME\Documents\job-app-backup.sql"
+```
+
+**Check:** `npx supabase migration list --remote` shows the initial migration under both Local and Remote, and `supabase/migrations/` is committed.
 
 ## Step 1: login
 
@@ -140,7 +169,18 @@ Use Supabase Auth. It is already part of your Supabase project.
 
 This is the step that makes the app safe for more than one person.
 
-1. New migration (`npx supabase migration new add_user_id`, then `npx supabase db push`), sketched:
+This is the first migration that changes tables holding your data, so back up first (step 0).
+
+1. Find your user id: after step 1, sign in once, then copy your row's id from **Authentication → Users** in the dashboard.
+
+2. Create the migration:
+
+   ```powershell
+   npx supabase db dump --remote --data-only -f "$HOME\Documents\job-app-backup.sql"
+   npx supabase migration new add_user_id
+   ```
+
+   Write this in the new file, sketched:
 
    ```sql
    -- Who owns each row. New rows get the signed-in user's id automatically.
@@ -152,35 +192,50 @@ This is the step that makes the app safe for more than one person.
      default auth.uid();
 
    -- Give every existing row to you, then require the column.
+   -- This covers status_events rows with no application_id too
+   -- (the "irrelevant" emails), because it sets every row.
    update applications set user_id = '<your user id>';
    update status_events set user_id = '<your user id>';
    alter table applications alter column user_id set not null;
    alter table status_events alter column user_id set not null;
 
    -- Two users may save the same posting or receive the same email.
+   -- Names confirmed in 20261110223319_remote_schema.sql.
+   -- The new unique pairs start with user_id, so they also act as
+   -- the index the policies below need. No separate index required.
    alter table applications drop constraint applications_url_key;
    alter table applications add unique (user_id, url);
    alter table status_events drop constraint status_events_email_id_key;
    alter table status_events add unique (user_id, email_id);
 
-   -- Each user can read and change only their own rows.
-   create policy "own rows" on applications for all
+   -- Each signed-in user can read and change only their own rows.
+   -- Signed-out requests match no policy, so they get nothing.
+   create policy "own rows" on applications for all to authenticated
      using ((select auth.uid()) = user_id)
      with check ((select auth.uid()) = user_id);
-   create policy "own rows" on status_events for all
+   create policy "own rows" on status_events for all to authenticated
      using ((select auth.uid()) = user_id)
      with check ((select auth.uid()) = user_id);
    ```
 
-   Constraint names may differ in your database. The migration from step 0 shows the real names.
+   If either unique pair is ever removed, add `create index ... on <table> (user_id)` in its place.
 
-   Steps 3 to 6 add more tables the same way: `migration new`, write the SQL, `db push`.
+3. Check it, then apply it:
 
-2. In `src/app/actions.ts`, `src/app/page.tsx` and `src/app/jobs/[id]/page.tsx`, replace `db` with the per-user client from `src/lib/supabase/server.ts`. The queries themselves barely change, because RLS does the filtering.
+   ```powershell
+   npx supabase db push --remote --dry-run
+   npx supabase db push --remote
+   ```
 
-3. Check the `error` from every write and show it. With RLS on, a blocked write returns an error or changes zero rows, and today's code ignores both.
+   The dry run should list only `add_user_id`.
 
-4. Background code (`scripts/check-email.ts`, later the cron route) keeps the secret key, which skips RLS. That code must set and filter `user_id` itself on every query.
+   Steps 3 to 6 add more tables the same way: `migration new`, write the SQL, dry run, `db push --remote`. Supabase's `ensure_rls` trigger turns Row Level Security on for each new table automatically (see [database-schema.md](database-schema.md)), but each one still needs its own policies; until then it refuses every request except those made with the secret key.
+
+4. In `src/app/actions.ts`, `src/app/page.tsx` and `src/app/jobs/[id]/page.tsx`, replace `db` with the per-user client from `src/lib/supabase/server.ts`. The queries themselves barely change, because RLS does the filtering.
+
+5. Check the `error` from every write and show it. With RLS on, a blocked write returns an error or changes zero rows, and today's code ignores both.
+
+6. Background code (`scripts/check-email.ts`, later the cron route) keeps the secret key, which skips RLS. That code must set and filter `user_id` itself on every query, including the `irrelevant` and `needs_review` events that have no application. The `default auth.uid()` doesn't help here: with the secret key there is no signed-in user, so it would be empty and the insert would fail.
 
 **Check:** make a second Google account and sign in with it. The dashboard is empty. Paste the address of one of your own job pages; it shows "not found". Add the same job link under both accounts; both succeed.
 
@@ -196,8 +251,10 @@ This is the step that makes the app safe for more than one person.
      approved boolean not null default false,   -- used in step 5
      created_at timestamptz not null default now()
    );
+   -- Row Level Security is turned on by the ensure_rls trigger;
+   -- this line is kept so the file is clear on its own.
    alter table profiles enable row level security;
-   create policy "own profile" on profiles for all
+   create policy "own profile" on profiles for all to authenticated
      using ((select auth.uid()) = user_id)
      with check ((select auth.uid()) = user_id);
    ```

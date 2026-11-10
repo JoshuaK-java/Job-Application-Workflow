@@ -1,6 +1,6 @@
 # Database schema: what the first migration contains
 
-This is the check from step 10 of step 0 in [hosting-plan.md](hosting-plan.md). It describes the migration that `npx supabase db pull --remote` created from the tables made by hand in the Supabase dashboard:
+This is the check from step 0, item 7, in [hosting-plan.md](hosting-plan.md). It describes the migration that `npx supabase db pull --remote` created from the tables made by hand in the Supabase dashboard:
 
 `supabase/migrations/20261110223319_remote_schema.sql`
 
@@ -84,17 +84,10 @@ That's why the app works today: it uses the secret key, which bypasses RLS. A re
 
 ## Notes for step 2
 
-Three small changes to the step 2 sketch in the hosting plan, found while reading this file:
+Three points found while reading this file. All three are now in the step 2 sketch in the hosting plan.
 
-1. **Add an index on `user_id`.** The file has no indexes beyond the primary keys and the two unique constraints. Every policy filters on `user_id`, so without an index each query reads the whole table.
+1. **An index on `user_id`.** The file has no indexes beyond the primary keys and the two unique constraints. Every policy filters on `user_id`, so it needs an index or each query reads the whole table. The new `(user_id, url)` and `(user_id, email_id)` unique constraints start with `user_id`, so they serve as that index. A separate `create index ... (user_id)` is only needed if one of those constraints is ever removed.
 
-   ```sql
-   create index applications_user_id_idx on applications (user_id);
-   create index status_events_user_id_idx on status_events (user_id);
-   ```
+2. **Policies limited to signed-in users.** The policies use `to authenticated`. Without it a signed-out request is still blocked, because its user id is empty and never matches, but the explicit version states the intent and saves the database a check.
 
-   The new `(user_id, url)` and `(user_id, email_id)` unique constraints also work as indexes starting with `user_id`, so these two are only strictly needed if those constraints change.
-
-2. **Limit the policies to signed-in users.** Write `create policy "own rows" on applications for all to authenticated using (...)`. Without `to authenticated`, a signed-out request is still blocked, because its user id is empty and never matches. Adding it makes that intent explicit and saves the database a check.
-
-3. **Rows with no application still need an owner.** Some `status_events` rows have no `application_id`, such as the `irrelevant` emails. The step 2 `update status_events set user_id = ...` sets every row regardless, so these get an owner too. Background code that inserts them later must still set `user_id` itself.
+3. **Rows with no application still need an owner.** Some `status_events` rows have no `application_id`, such as the `irrelevant` emails. The step 2 `update status_events set user_id = ...` sets every row, so existing ones get an owner. Background code that inserts new ones with the secret key must set `user_id` itself.
