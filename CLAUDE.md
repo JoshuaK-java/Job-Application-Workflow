@@ -110,4 +110,5 @@ Apply helper (Step 7, done):
 
 Not done yet:
 - Step 6: schedule `npm run check-email` daily with Windows Task Scheduler (8:00, "run as soon as possible after a missed start").
-- Ideas for later: cover letter generator, "no reply in 3 weeks" follow-up flag, DOCX resume download, hosted version with login.
+- Hosted multi-user version with login: goals in `CLAUDEFUTR.md`, step-by-step plan in `docs/hosting-plan.md` (also `docs/past-project.md`, `docs/build-reccommendations.md`). Nothing built yet. Plan: one Next.js app on Vercel, Supabase Auth, `user_id` + RLS, no separate backend.
+- Ideas for later: cover letter generator, "no reply in 3 weeks" follow-up flag, DOCX resume download.
