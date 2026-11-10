@@ -2,7 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const claude = new Anthropic(); // reads ANTHROPIC_API_KEY
 
-export async function askText(model: string, system: string, user: string, maxTokens = 4000) {
+export async function askText(
+  model: string,
+  system: string,
+  user: string,
+  maxTokens = 4000,
+) {
   const res = await claude.messages.create({
     model,
     max_tokens: maxTokens,
@@ -24,7 +29,7 @@ export async function askStructured<T>(
   system: string,
   user: string,
   schema: JSONSchema,
-  maxTokens = 1000
+  maxTokens = 1000,
 ): Promise<T> {
   const tool: Anthropic.Tool = {
     name: "record_result",
@@ -42,8 +47,12 @@ export async function askStructured<T>(
       messages: [{ role: "user", content: user }],
     });
     const call = res.content.find((b) => b.type === "tool_use");
-    if (call && call.type === "tool_use" && res.stop_reason !== "max_tokens") return call.input as T;
-    lastProblem = res.stop_reason === "max_tokens" ? "answer was cut off" : "no structured answer returned";
+    if (call && call.type === "tool_use" && res.stop_reason !== "max_tokens")
+      return call.input as T;
+    lastProblem =
+      res.stop_reason === "max_tokens"
+        ? "answer was cut off"
+        : "no structured answer returned";
   }
   throw new Error(`Claude: ${lastProblem}`);
 }

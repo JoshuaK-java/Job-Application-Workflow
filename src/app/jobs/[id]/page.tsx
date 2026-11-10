@@ -1,25 +1,38 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
-import { db } from "@/lib/db";
-import { tailorResume, saveResume, updateStatus } from "../../actions";
-import { ApplyPanel } from "../../apply-panel";
 
-export default function JobPage({ params }: { params: Promise<{ id: string }> }) {
+import { db } from "@/lib/db";
+import { tailorResume, saveResume, updateStatus } from "@/app/actions";
+import ApplyPanel from "@/components/ApplyPanel";
+
+interface JobPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function JobPage({ params }: JobPageProps) {
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 p-8">
-      <Link href="/" className="text-sm underline">← All applications</Link>
-      <Suspense fallback={<p className="text-sm text-gray-500">Loading job…</p>}>
+      <Link href="/" className="text-sm underline">
+        ← All applications
+      </Link>
+      <Suspense
+        fallback={<p className="text-sm text-gray-500">Loading job…</p>}
+      >
         <JobDetails params={params} />
       </Suspense>
     </main>
   );
 }
 
-async function JobDetails({ params }: { params: Promise<{ id: string }> }) {
+async function JobDetails({ params }: JobPageProps) {
   await connection();
   const { id } = await params;
-  const { data: job } = await db.from("applications").select("*").eq("id", id).single();
+  const { data: job } = await db
+    .from("applications")
+    .select("*")
+    .eq("id", id)
+    .single();
   if (!job) return <p>Job not found.</p>;
   const { data: events } = await db
     .from("status_events")
@@ -29,10 +42,21 @@ async function JobDetails({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold">{job.title} · {job.company}</h1>
+      <h1 className="text-2xl font-semibold">
+        {job.title} · {job.company}
+      </h1>
       <p className="text-sm text-gray-500">
         {job.location}
-        {job.url && <> · <a href={job.url} target="_blank" className="underline">Posting</a></>} · Status: {job.status}
+        {job.url && (
+          <>
+            {" "}
+            ·{" "}
+            <a href={job.url} target="_blank" className="underline">
+              Posting
+            </a>
+          </>
+        )}{" "}
+        · Status: {job.status}
       </p>
 
       <div className="flex gap-3">
@@ -43,7 +67,9 @@ async function JobDetails({ params }: { params: Promise<{ id: string }> }) {
             </button>
           </form>
         ) : (
-          <p className="text-sm text-gray-500">Added from email, so there&apos;s no job description to tailor to.</p>
+          <p className="text-sm text-gray-500">
+            Added from email, so there&apos;s no job description to tailor to.
+          </p>
         )}
         <form action={updateStatus.bind(null, id, "applied")}>
           <button className="rounded border px-4 py-2">Mark as applied</button>
@@ -70,8 +96,8 @@ async function JobDetails({ params }: { params: Promise<{ id: string }> }) {
         <ul className="text-sm">
           {(events ?? []).map((e) => (
             <li key={e.id}>
-              {new Date(e.created_at).toLocaleDateString()}: {e.status} ({e.source})
-              {e.summary ? ` – ${e.summary}` : ""}
+              {new Date(e.created_at).toLocaleDateString()}: {e.status} (
+              {e.source}){e.summary ? ` – ${e.summary}` : ""}
             </li>
           ))}
         </ul>
@@ -79,7 +105,9 @@ async function JobDetails({ params }: { params: Promise<{ id: string }> }) {
 
       {job.description && (
         <details>
-          <summary className="cursor-pointer font-semibold">Job description</summary>
+          <summary className="cursor-pointer font-semibold">
+            Job description
+          </summary>
           <p className="mt-2 whitespace-pre-wrap text-sm">{job.description}</p>
         </details>
       )}

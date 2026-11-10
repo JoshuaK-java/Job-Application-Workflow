@@ -1,30 +1,18 @@
-// Assisted applying, shared by the dashboard (app/apply-actions.ts) and scripts/apply.ts.
+// Assisted applying, shared by the dashboard (src/app/apply-actions.ts) and scripts/apply.ts.
 // Server-only: launches a real browser on this PC and writes to the database.
 // It NEVER clicks Submit: Joshua reviews everything and submits himself.
-import { chromium, type BrowserContext, type Frame, type Locator, type Page } from "playwright";
+import {
+  chromium,
+  type BrowserContext,
+  type Frame,
+  type Locator,
+  type Page,
+} from "playwright";
 import { marked } from "marked";
 import { mkdir, readFile } from "node:fs/promises";
-import { db } from "./db";
 
-export type Profile = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  location: string;
-  linkedin?: string;
-  github?: string;
-  website?: string;
-};
-
-export type ApplyJob = {
-  id: string;
-  company: string | null;
-  title: string | null;
-  url: string | null;
-  status: string;
-  tailored_resume: string | null;
-};
+import { db } from "@/lib/db";
+import type { ApplyJob, Profile } from "@/types/apply";
 
 const PROFILE_DIR = "data/browser-profile";
 const RESUME_DIR = "data/resumes";
@@ -53,23 +41,32 @@ export async function loadJob(id: string): Promise<ApplyJob> {
     .eq("id", id)
     .single();
   if (error || !job) throw new Error(`No job with id ${id}.`);
-  if (!job.url) throw new Error("This job has no link (it was probably added from an email), so there's no form to open.");
-  if (!job.tailored_resume) throw new Error("Tailor the resume for this job first.");
+  if (!job.url)
+    throw new Error(
+      "This job has no link (it was probably added from an email), so there's no form to open.",
+    );
+  if (!job.tailored_resume)
+    throw new Error("Tailor the resume for this job first.");
   return job;
 }
 
 export async function makeResumePdf(job: ApplyJob, me: Profile) {
   await mkdir(RESUME_DIR, { recursive: true });
-  const safe = (s: string) => s.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
+  const safe = (s: string) =>
+    s.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
   const pdfPath = `${RESUME_DIR}/${safe(`${me.firstName} ${me.lastName} ${job.company ?? ""} ${job.title ?? ""}`)}.pdf`;
   const printer = await chromium.launch();
   try {
     const p = await printer.newPage();
     await p.setContent(
       `<!doctype html><html><head><meta charset="utf-8"><style>${PDF_CSS}</style></head>` +
-        `<body>${await marked(job.tailored_resume ?? "")}</body></html>`
+        `<body>${await marked(job.tailored_resume ?? "")}</body></html>`,
     );
-    await p.pdf({ path: pdfPath, format: "Letter", margin: { top: "0.5in", bottom: "0.5in", left: "0.6in", right: "0.6in" } });
+    await p.pdf({
+      path: pdfPath,
+      format: "Letter",
+      margin: { top: "0.5in", bottom: "0.5in", left: "0.6in", right: "0.6in" },
+    });
   } finally {
     await printer.close();
   }
@@ -78,7 +75,11 @@ export async function makeResumePdf(job: ApplyJob, me: Profile) {
 
 // One visible browser at a time: the persistent profile can only be opened once.
 // Kept on globalThis so it survives Next.js dev reloads.
-type Session = { context: BrowserContext; jobId: string; pdfPath: string };
+interface Session {
+  context: BrowserContext;
+  jobId: string;
+  pdfPath: string;
+}
 const g = globalThis as unknown as { applySession?: Session };
 
 export function currentSession() {
@@ -86,7 +87,10 @@ export function currentSession() {
 }
 
 async function openContext() {
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, { headless: false, viewport: null });
+  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
+    headless: false,
+    viewport: null,
+  });
   context.on("close", () => {
     if (g.applySession?.context === context) g.applySession = undefined;
   });
@@ -105,7 +109,8 @@ export async function openPosting(job: ApplyJob, pdfPath: string) {
   }
   const page = await session.context.newPage();
   // Close leftover tabs (e.g. a blank start tab or a previous job).
-  for (const other of session.context.pages()) if (other !== page) await other.close().catch(() => {});
+  for (const other of session.context.pages())
+    if (other !== page) await other.close().catch(() => {});
   await page.goto(job.url!);
   await page.bringToFront();
   return page;
@@ -154,7 +159,11 @@ async function findResumeInput(frames: Frame[]): Promise<Locator | null> {
           return `${e.name} ${e.id} ${e.getAttribute("aria-label") ?? ""} ${label} ${around.slice(0, 200)}`;
         })
         .catch(() => "");
-      if (/resume|résumé|\bcv\b/i.test(hint) && !/cover/i.test(hint.slice(0, 80))) return input;
+      if (
+        /resume|résumé|\bcv\b/i.test(hint) &&
+        !/cover/i.test(hint.slice(0, 80))
+      )
+        return input;
       fallback ??= input;
     }
   }
@@ -177,7 +186,11 @@ export async function fillForm(page: Page, me: Profile, pdfPath: string) {
   await tryFill("location", /location|city/i, me.location);
   await tryFill("LinkedIn", /linkedin/i, me.linkedin);
   await tryFill("GitHub", /github/i, me.github);
-  await tryFill("website", /website|portfolio|personal (site|url)/i, me.website ?? me.github);
+  await tryFill(
+    "website",
+    /website|portfolio|personal (site|url)/i,
+    me.website ?? me.github,
+  );
 
   const upload = await findResumeInput(frames);
   if (upload) {
@@ -199,10 +212,19 @@ export function formPage(session: Session) {
 // Marks the job applied unless its status has already moved past that.
 // Returns false if it was left alone.
 export async function markApplied(id: string) {
-  const { data: job } = await db.from("applications").select("status").eq("id", id).single();
+  const { data: job } = await db
+    .from("applications")
+    .select("status")
+    .eq("id", id)
+    .single();
   if (!job || !BEFORE_APPLIED.includes(job.status)) return false;
   const now = new Date().toISOString();
-  await db.from("applications").update({ status: "applied", applied_at: now, last_update_at: now }).eq("id", id);
-  await db.from("status_events").insert({ application_id: id, status: "applied", source: "manual" });
+  await db
+    .from("applications")
+    .update({ status: "applied", applied_at: now, last_update_at: now })
+    .eq("id", id);
+  await db
+    .from("status_events")
+    .insert({ application_id: id, status: "applied", source: "manual" });
   return true;
 }

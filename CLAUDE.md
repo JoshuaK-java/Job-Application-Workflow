@@ -15,7 +15,7 @@ Full build guide (source of truth for the plan): https://claude.ai/artifact/1bY8
 
 - Windows, VS Code terminal is **PowerShell**. Give PowerShell commands (e.g. `mkdir data, scripts`, not `mkdir data scripts`). PowerShell can drop `--` in `npm run x -- arg`; use `npx tsx --env-file=.env.local scripts/<file>.ts <arg>` instead.
 - Node 24. Next.js 16.4 (App Router, Turbopack, Tailwind 4), React 19.3, TypeScript.
-- The git repo root is the parent folder `Job-Application-Workflow`, not this folder.
+- The Next app is the git repo root (`Job-Application-Workflow`). Source lives in `src/`; `scripts/` and `data/` sit at the root.
 - Email is **iCloud Mail over IMAP** (`imapflow` + `mailparser`), not Gmail.
 
 ## Stack
@@ -31,15 +31,36 @@ Full build guide (source of truth for the plan): https://claude.ai/artifact/1bY8
 
 ## Files
 
-- `lib/statuses.ts`: the status list. Safe for client components.
-- `lib/db.ts`: Supabase client with the secret key. **Server-only; never import it from a `"use client"` file** (import statuses from `lib/statuses.ts` instead).
-- `lib/claude.ts`: `askText` (free text, used for resume tailoring) and `askStructured<T>(model, system, user, schema, maxTokens)`, which uses **tool use with a forced `tool_choice`** so Claude returns an object matching a JSON Schema. Use `askStructured` for any structured output; never ask for JSON in a prompt and parse text.
-- `lib/mail.ts`: `recentEmails(days)` over IMAP.
-- `app/actions.ts`: server actions `updateStatus`, `addJob`, `tailorResume`, `saveResume`.
-- `app/page.tsx`: dashboard. `app/jobs/[id]/page.tsx`: job page with tailoring and history.
-- `app/add-job-form.tsx`, `app/status-select.tsx`: client components.
+- `src/lib/statuses.ts`: the status list. Safe for client components.
+- `src/lib/db.ts`: Supabase client with the secret key. **Server-only; never import it from a `"use client"` file** (import statuses from `@/lib/statuses` instead).
+- `src/lib/claude.ts`: `askText` (free text, used for resume tailoring) and `askStructured<T>(model, system, user, schema, maxTokens)`, which uses **tool use with a forced `tool_choice`** so Claude returns an object matching a JSON Schema. Use `askStructured` for any structured output; never ask for JSON in a prompt and parse text.
+- `src/lib/mail.ts`: `recentEmails(days)` over IMAP.
+- `src/app/actions.ts`: server actions `updateStatus`, `addJob`, `tailorResume`, `saveResume`.
+- `src/app/page.tsx`: dashboard. `src/app/jobs/[id]/page.tsx`: job page with tailoring and history.
+- `src/components/`: client components (`AddJobForm`, `StatusSelect`, `ApplyPanel`).
+- `src/types/`: shared object types (`apply.ts`: `Profile`, `ApplyJob`, `ApplyResult`; `email.ts`: `Email`).
 - `scripts/check-email.ts`: run with `npm run check-email` (default 3 days back; pass a number for more).
 - `data/master-resume.md`: the master resume. Has no graduation dates yet; Joshua was asked to add them.
+
+## Conventions
+
+Matches the TCSS 460 group project (`group-project-frontend-public-group-4`).
+
+Layout:
+- `src/app/` routes and server actions, `src/components/` React components, `src/lib/` server code and helpers, `src/types/` shared types. `@/*` maps to `./src/*`.
+- Config files (`next.config.ts`, `eslint.config.mjs`, `tsconfig.json`, `.env.example`) at the repo root. Terminal scripts in `scripts/`, run with `tsx` (it understands the `@/` alias).
+
+Code style:
+- Components: one per file in `src/components/`, PascalCase file name, `export default function Name`. Props as `interface NameProps` above the component.
+- Shared object shapes go in `src/types/*.ts` as `interface`. Types used in one file stay in that file. Use `type` only for unions and derived types (e.g. `Status`).
+- Imports: always `@/...`, never `../`. Package imports first, a blank line, then `@/` imports. A blank line after `"use client"` / `"use server"`.
+- Formatting: Prettier defaults (80 columns, double quotes, semicolons, trailing commas). No config file; format with `npx prettier --write <files>`.
+- Lint: `npm run lint` (`next/core-web-vitals` + `next/typescript`).
+
+Git:
+- `main` is the stable branch. Work on `jk/<topic>` branches and merge into `main` with a pull request.
+- Commit messages: short, lowercase, plain description of the change (e.g. `apply panel added`, `fix status dropdown not saving`). No prefixes like `feat:`.
+- `.env*` is ignored except `.env.example`, which lists variable names with no values.
 
 ## Next.js 16 rules for this project
 
@@ -81,8 +102,8 @@ Adding jobs from Indeed/LinkedIn/Glassdoor/ZipRecruiter:
 - Indeed search-result links (`vjk=`) are normalized to `/viewjob?jk=` so the stored link is the job itself.
 
 Apply helper (Step 7, done):
-- Joshua uses it from the **Apply panel on the job page** (`app/apply-panel.tsx` → server actions in `app/apply-actions.ts`), not the terminal. Shown only for jobs with a URL and a tailored resume. Buttons: Open application → Fill form (can repeat on multi-page forms) → "I submitted it: mark applied" or Close browser.
-- Logic lives in `lib/apply.ts` (server-only). The Next server process launches a visible Chromium window on his PC; the single open browser is kept on `globalThis` (persistent profile `data/browser-profile` can only be opened once). Playwright is in Next's default `serverExternalPackages`, so no config needed.
+- Joshua uses it from the **Apply panel on the job page** (`src/components/ApplyPanel.tsx` → server actions in `src/app/apply-actions.ts`), not the terminal. Shown only for jobs with a URL and a tailored resume. Buttons: Open application → Fill form (can repeat on multi-page forms) → "I submitted it: mark applied" or Close browser.
+- Logic lives in `src/lib/apply.ts` (server-only). The Next server process launches a visible Chromium window on his PC; the single open browser is kept on `globalThis` (persistent profile `data/browser-profile` can only be opened once). Playwright is in Next's default `serverExternalPackages`, so no config needed.
 - Renders the tailored resume to a PDF in `data/resumes/` (gitignored, as is the browser profile), fills empty fields from `data/profile.json` across all frames (Greenhouse-style iframes), attaches the PDF to the resume file input (not the cover letter one). Never overwrites a filled field and never clicks Submit.
 - Marks applied only if status is `saved` or `tailored` (status only moves forward).
 - `scripts/apply.ts` is a terminal fallback using the same lib (`npx tsx --env-file=.env.local scripts/apply.ts <job id>`).

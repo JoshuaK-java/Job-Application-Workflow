@@ -1,7 +1,9 @@
 "use server";
+
 import { revalidatePath } from "next/cache";
 import { readFile } from "node:fs/promises";
 import * as cheerio from "cheerio";
+
 import { db, type Status } from "@/lib/db";
 import { askStructured, askText, type JSONSchema } from "@/lib/claude";
 
@@ -15,12 +17,20 @@ export async function updateStatus(id: string, status: Status) {
       ...(status === "applied" ? { applied_at: now } : {}),
     })
     .eq("id", id);
-  await db.from("status_events").insert({ application_id: id, status, source: "manual" });
+  await db
+    .from("status_events")
+    .insert({ application_id: id, status, source: "manual" });
   revalidatePath("/");
   revalidatePath(`/jobs/${id}`);
 }
 
-type Job = { company: string; title: string; location: string; description: string };
+interface Job {
+  company: string;
+  title: string;
+  location: string;
+  description: string;
+}
+
 const JOB_SCHEMA: JSONSchema = {
   type: "object",
   properties: {
@@ -29,7 +39,8 @@ const JOB_SCHEMA: JSONSchema = {
     location: { type: "string" },
     description: {
       type: "string",
-      description: "Full posting text (responsibilities, requirements, qualifications), copied faithfully. Empty if there is no job posting.",
+      description:
+        "Full posting text (responsibilities, requirements, qualifications), copied faithfully. Empty if there is no job posting.",
     },
   },
   required: ["company", "title", "location", "description"],
@@ -40,7 +51,8 @@ function cleanJobUrl(raw: string) {
   try {
     const u = new URL(raw);
     const jk = u.searchParams.get("jk") ?? u.searchParams.get("vjk");
-    if (/(^|\.)indeed\.com$/i.test(u.hostname) && jk) return `https://${u.hostname}/viewjob?jk=${jk}`;
+    if (/(^|\.)indeed\.com$/i.test(u.hostname) && jk)
+      return `https://${u.hostname}/viewjob?jk=${jk}`;
   } catch {
     // Not a valid URL; leave it as typed.
   }
@@ -57,7 +69,11 @@ const BLOCKED_HOSTS: Record<string, string> = {
 function blockedSite(url: string) {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return Object.entries(BLOCKED_HOSTS).find(([h]) => host === h || host.endsWith(`.${h}`))?.[1] ?? null;
+    return (
+      Object.entries(BLOCKED_HOSTS).find(
+        ([h]) => host === h || host.endsWith(`.${h}`),
+      )?.[1] ?? null
+    );
   } catch {
     return null;
   }
@@ -77,15 +93,24 @@ export async function addJob(_prev: unknown, form: FormData) {
       };
     }
     try {
-      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+      });
       if (!res.ok) {
-        return { error: `That site refused the request (error ${res.status}). Paste the description in the box below.`, needsPaste: true };
+        return {
+          error: `That site refused the request (error ${res.status}). Paste the description in the box below.`,
+          needsPaste: true,
+        };
       }
       const $ = cheerio.load(await res.text());
       $("script, style, nav, footer, header").remove();
       pageText = $("body").text().replace(/\s+/g, " ").slice(0, 30000);
     } catch {
-      return { error: "Couldn't open that page. Paste the description in the box below.", needsPaste: true };
+      return {
+        error:
+          "Couldn't open that page. Paste the description in the box below.",
+        needsPaste: true,
+      };
     }
   }
 
@@ -97,20 +122,31 @@ export async function addJob(_prev: unknown, form: FormData) {
 If the page has no job posting, record an empty description.`,
       pageText,
       JOB_SCHEMA,
-      8000
+      8000,
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("addJob: Claude call failed:", message);
-    return { error: `Couldn't read the posting (${message}). Paste the description in the box below.` };
+    return {
+      error: `Couldn't read the posting (${message}). Paste the description in the box below.`,
+    };
   }
 
   if (!job.description || job.description.length < 200) {
-    return { error: "Couldn't find the job description on that page. Paste it in the box below.", needsPaste: true };
+    return {
+      error:
+        "Couldn't find the job description on that page. Paste it in the box below.",
+      needsPaste: true,
+    };
   }
 
   const { error } = await db.from("applications").insert({ url, ...job });
-  if (error) return { error: error.message.includes("duplicate") ? "You've already added this job." : error.message };
+  if (error)
+    return {
+      error: error.message.includes("duplicate")
+        ? "You've already added this job."
+        : error.message,
+    };
 
   revalidatePath("/");
   return { error: null };
@@ -125,14 +161,18 @@ Rules:
 - Output the finished resume in Markdown only, with no commentary.`;
 
 export async function tailorResume(id: string) {
-  const { data: job } = await db.from("applications").select("*").eq("id", id).single();
+  const { data: job } = await db
+    .from("applications")
+    .select("*")
+    .eq("id", id)
+    .single();
   if (!job) return;
   const master = await readFile("data/master-resume.md", "utf8");
 
   const tailored = await askText(
     process.env.TAILOR_MODEL!,
     TAILOR_RULES,
-    `MASTER RESUME:\n${master}\n\nJOB POSTING (${job.title} at ${job.company}):\n${job.description}`
+    `MASTER RESUME:\n${master}\n\nJOB POSTING (${job.title} at ${job.company}):\n${job.description}`,
   );
 
   await db
@@ -149,6 +189,9 @@ export async function tailorResume(id: string) {
 }
 
 export async function saveResume(id: string, form: FormData) {
-  await db.from("applications").update({ tailored_resume: String(form.get("resume")) }).eq("id", id);
+  await db
+    .from("applications")
+    .update({ tailored_resume: String(form.get("resume")) })
+    .eq("id", id);
   revalidatePath(`/jobs/${id}`);
 }
