@@ -1,9 +1,10 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
+
 import { db, STATUSES } from "@/lib/db";
-import { StatusSelect } from "./status-select";
-import { AddJobForm } from "./add-job-form";
+import AddJobForm from "@/components/AddJobForm";
+import StatusSelect from "@/components/StatusSelect";
 
 export default function Home() {
   return (
@@ -13,7 +14,11 @@ export default function Home() {
       <Suspense fallback={null}>
         <NeedsReview />
       </Suspense>
-      <Suspense fallback={<p className="text-sm text-gray-500">Loading applications…</p>}>
+      <Suspense
+        fallback={
+          <p className="text-sm text-gray-500">Loading applications…</p>
+        }
+      >
         <Applications />
       </Suspense>
     </main>
@@ -33,11 +38,14 @@ async function NeedsReview() {
     <section className="mb-8 rounded border border-amber-400 p-4">
       <h2 className="mb-2 font-semibold">Needs review ({data.length})</h2>
       <p className="mb-2 text-sm text-gray-500">
-        These emails don&apos;t say which role they&apos;re about. Update the right application with its status dropdown.
+        These emails don&apos;t say which role they&apos;re about. Update the
+        right application with its status dropdown.
       </p>
       <ul className="space-y-1 text-sm">
         {data.map((e) => (
-          <li key={e.id}><span className="font-medium">{e.email_subject}</span> – {e.summary}</li>
+          <li key={e.id}>
+            <span className="font-medium">{e.email_subject}</span> – {e.summary}
+          </li>
         ))}
       </ul>
     </section>
@@ -49,13 +57,19 @@ async function Applications() {
   await connection();
   const { data, error } = await db
     .from("applications")
-    .select("id, company, title, location, url, status, applied_at, last_update_at")
+    .select(
+      "id, company, title, location, url, status, applied_at, last_update_at",
+    )
     .order("created_at", { ascending: false });
-  if (error) return <p className="text-sm text-red-600">Database error: {error.message}</p>;
+  if (error)
+    return (
+      <p className="text-sm text-red-600">Database error: {error.message}</p>
+    );
 
   const apps = data ?? [];
   const count = (s: string) => apps.filter((a) => a.status === s).length;
-  const day = (d?: string | null) => (d ? new Date(d).toLocaleDateString() : "–");
+  const day = (d?: string | null) =>
+    d ? new Date(d).toLocaleDateString() : "–";
 
   return (
     <>
@@ -69,24 +83,36 @@ async function Applications() {
       </div>
 
       {apps.length === 0 ? (
-        <p className="text-sm text-gray-500">No applications yet. Paste a job link above to add one.</p>
+        <p className="text-sm text-gray-500">
+          No applications yet. Paste a job link above to add one.
+        </p>
       ) : (
         <table className="w-full text-left text-sm">
           <thead className="border-b">
             <tr>
-              <th className="py-2">Company</th><th>Role</th><th>Location</th>
-              <th>Applied</th><th>Last update</th><th>Status</th>
+              <th className="py-2">Company</th>
+              <th>Role</th>
+              <th>Location</th>
+              <th>Applied</th>
+              <th>Last update</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {apps.map((a) => (
               <tr key={a.id} className="border-b">
                 <td className="py-2 font-medium">{a.company}</td>
-                <td><Link href={`/jobs/${a.id}`} className="underline">{a.title}</Link></td>
+                <td>
+                  <Link href={`/jobs/${a.id}`} className="underline">
+                    {a.title}
+                  </Link>
+                </td>
                 <td>{a.location}</td>
                 <td>{day(a.applied_at)}</td>
                 <td>{day(a.last_update_at)}</td>
-                <td><StatusSelect key={a.status} id={a.id} status={a.status} /></td>
+                <td>
+                  <StatusSelect key={a.status} id={a.id} status={a.status} />
+                </td>
               </tr>
             ))}
           </tbody>
